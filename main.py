@@ -7,7 +7,7 @@ import re
 app = Flask(__name__)
 
 # Configure CORS to only allow requests from homelessman's websim subdomains
-CORS(app, origins=r'https://websim\.com/@homelessman.*')
+CORS(app, origins=r"^https:\/\/websim-browser--homelessman\.on\.websim\.com\/$")
 
 @app.route('/getweb')
 def get_website():
