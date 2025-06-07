@@ -7,21 +7,19 @@ import re
 app = Flask(__name__)
 
 # Configure CORS to only allow requests from homelessman's websim subdomains
-def is_allowed_origin(origin):
-    if not origin:
-        return False
-    # Allow requests from https://websim.com/@homelessman and any of its subpaths
-    pattern = r'^https://websim\.com/@homelessman(/.*)?$'
-    return bool(re.match(pattern, origin))
-
-CORS(app, origins=is_allowed_origin)
+CORS(app, origins=r'https://websim\.com/@homelessman.*')
 
 @app.route('/getweb')
 def get_website():
     try:
         # Additional origin check for extra security
         origin = request.headers.get('Origin') or request.headers.get('Referer', '').rstrip('/')
-        if not is_allowed_origin(origin):
+        if not origin:
+            return jsonify({'error': 'Access denied: No origin header'}), 403
+            
+        # Check if origin matches the allowed pattern
+        pattern = r'^https://websim\.com/@homelessman(/.*)?$'
+        if not re.match(pattern, origin):
             return jsonify({'error': 'Access denied: Invalid origin'}), 403
         
         site_url = request.args.get('site')
