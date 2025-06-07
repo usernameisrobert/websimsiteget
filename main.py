@@ -2,26 +2,13 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 from urllib.parse import unquote
-import re
 
 app = Flask(__name__)
-
-# Configure CORS to only allow requests from homelessman's websim subdomains
-CORS(app, origins=r"^https:\/\/websim-browser--homelessman\.on\.websim\.com\/$")
+CORS(app)
 
 @app.route('/getweb')
 def get_website():
     try:
-        # Additional origin check for extra security
-        origin = request.headers.get('Origin') or request.headers.get('Referer', '').rstrip('/')
-        if not origin:
-            return jsonify({'error': 'Access denied: No origin header'}), 403
-            
-        # Check if origin matches the allowed pattern
-        pattern = r'^https://websim\.com/@homelessman(/.*)?$'
-        if not re.match(pattern, origin):
-            return jsonify({'error': 'Access denied: Invalid origin'}), 403
-        
         site_url = request.args.get('site')
         if not site_url:
             return jsonify({'error': 'Missing site parameter'}), 400
@@ -58,7 +45,6 @@ def home():
     return '''
     Website Fetcher API
     Use: /getweb?site=https://example.com
-    Access restricted to @homelessman websim domains
     '''
 
 if __name__ == '__main__':
