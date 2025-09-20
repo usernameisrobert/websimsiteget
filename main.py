@@ -1,51 +1,55 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, request, jsonify, Response
 import requests
-from urllib.parse import unquote
+from urllib.parse import urljoin, unquote
 
 app = Flask(__name__)
-CORS(app)
 
-@app.route('/getweb')
-def get_website():
+# Base URL of the proxy itself
+PROXY_BASE_URL = "http://127.0.0.1:5000"
+
+@app.route('/<path:proxy_url>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def proxy(proxy_url):
     try:
-        site_url = request.args.get('site')
-        if not site_url:
-            return jsonify({'error': 'Missing site parameter'}), 400
+        # Prepend 'http://' if missing for requests.
+        if not proxy_url.startswith(('http://', 'https://')):
+            proxy_url = 'https://' + proxy_url
+
+        # Check for original URL in headers. This is a common practice for proxies.
+        original_url = request.headers.get('X-Original-URL', proxy_url)
         
-        # Decode URL if it's encoded
-        site_url = unquote(site_url)
+        # Determine the target URL
+        target_url = urljoin(original_url, request.full_path)
         
-        # Add protocol if missing
-        if not site_url.startswith(('http://', 'https://')):
-            site_url = 'https://' + site_url
+        # Prepare headers to forward. This is crucial for handling sessions.
+        headers = {key: value for key, value in request.headers if key.lower() not in ['host', 'origin', 'referer', 'x-forwarded-for', 'x-real-ip']}
+        headers['X-Forwarded-For'] = request.remote_addr
         
-        # Fetch the website
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        # Make the request to the target site.
+        if request.method == 'GET':
+            response = requests.get(target_url, headers=headers, params=request.args, stream=True)
+        elif request.method == 'POST':
+            response = requests.post(target_url, headers=headers, data=request.get_data(), stream=True)
+        else:
+            # Handle other methods.
+            response = requests.request(request.method, target_url, headers=headers, data=request.get_data(), stream=True)
+
+        # Create a Flask response from the fetched response.
+        # This streams the content to the client, which is memory-efficient.
+        # It also copies all headers and the status code.
+        proxy_response = Response(response.iter_content(chunk_size=1024), status=response.status_code)
         
-        response = requests.get(site_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        return {
-            'url': site_url,
-            'status_code': response.status_code,
-            'content': response.text,
-            'headers': dict(response.headers)
-        }
+        # Copy headers from the target response to the proxy response
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        for key, value in response.headers.items():
+            if key.lower() not in excluded_headers:
+                proxy_response.headers[key] = value
+
+        return proxy_response
         
     except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Failed to fetch website: {str(e)}'}), 500
+        return jsonify({'error': f'Proxy request failed: {str(e)}'}), 500
     except Exception as e:
         return jsonify({'error': f'Server error: {str(e)}'}), 500
-
-@app.route('/')
-def home():
-    return '''
-    Website Fetcher API
-    Use: /getweb?site=https://example.com
-    '''
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
