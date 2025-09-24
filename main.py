@@ -1,52 +1,50 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
+from urllib.parse import unquote
 
 app = Flask(__name__)
+CORS(app)
 
-@app.route('/proxy', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def proxy_request():
+@app.route('/getweb')
+def get_website():
     try:
-        # Get the target URL from the 'site' query parameter.
-        target_url = request.args.get('site')
-        if not target_url:
+        site_url = request.args.get('site')
+        if not site_url:
             return jsonify({'error': 'Missing site parameter'}), 400
-
-        # Ensure the URL has a protocol
-        if not target_url.startswith(('http://', 'https://')):
-            target_url = 'https://' + target_url
-
-        # Prepare headers to forward.
-        headers = {key: value for key, value in request.headers if key.lower() not in ['host', 'origin', 'referer', 'x-forwarded-for', 'x-real-ip']}
-        headers['X-Forwarded-For'] = request.remote_addr
-
-        # Make the request to the target site based on the HTTP method.
-        if request.method == 'GET':
-            response = requests.get(target_url, headers=headers, params=request.args, stream=True)
-        elif request.method == 'POST':
-            response = requests.post(target_url, headers=headers, data=request.get_data(), stream=True)
-        else:
-            response = requests.request(request.method, target_url, headers=headers, data=request.get_data(), stream=True)
-
-        # Create a Flask response from the fetched response.
-        proxy_response = Response(response.iter_content(chunk_size=1024), status=response.status_code)
         
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        for key, value in response.headers.items():
-            if key.lower() not in excluded_headers:
-                proxy_response.headers[key] = value
-
-        return proxy_response
-
+        # Decode URL if it's encoded
+        site_url = unquote(site_url)
+        
+        # Add protocol if missing
+        if not site_url.startswith(('http://', 'https://')):
+            site_url = 'https://' + site_url
+        
+        # Fetch the website
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(site_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        return {
+            'url': site_url,
+            'status_code': response.status_code,
+            'content': response.text,
+            'headers': dict(response.headers)
+        }
+        
     except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Proxy request failed: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to fetch website: {str(e)}'}), 500
     except Exception as e:
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/')
 def home():
     return '''
-    Proxy API
-    Use: /proxy?site=https://example.com
+    Website Fetcher API
+    Use: /getweb?site=https://example.com
     '''
 
 if __name__ == '__main__':
